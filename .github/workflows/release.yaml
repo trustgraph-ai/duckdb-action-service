@@ -1,0 +1,90 @@
+
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: read
+
+jobs:
+
+  build-platform-image:
+
+    name: Build ${{ matrix.container }} (${{ matrix.platform }})
+    permissions:
+      contents: write
+      id-token: write
+    environment:
+      name: release
+    strategy:
+      matrix:
+        container:
+          - duckdb-action-service
+        platform:
+          - amd64
+          - arm64
+        include:
+          - platform: amd64
+            runner: ubuntu-24.04
+          - platform: arm64
+            runner: ubuntu-24.04-arm
+
+    runs-on: ${{ matrix.runner }}
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: echo VERSION=$(git describe --exact-match --tags | sed 's/^v//') >> $GITHUB_OUTPUT
+
+      - name: Docker Hub token
+        run: echo ${{ secrets.DOCKER_SECRET }} > docker-token.txt
+
+      - name: Authenticate with Docker hub
+        run: make docker-hub-login
+
+      - name: Build container
+        run: make platform-${{ matrix.container }}-${{ matrix.platform }} VERSION=${{ steps.version.outputs.VERSION }}
+
+      - name: Push container
+        run: make push-platform-${{ matrix.container }}-${{ matrix.platform }} VERSION=${{ steps.version.outputs.VERSION }}
+
+  combine-manifests:
+
+    name: Combine manifest ${{ matrix.container }}
+    runs-on: ubuntu-24.04
+    needs: build-platform-image
+    permissions:
+      contents: write
+      id-token: write
+    environment:
+      name: release
+    strategy:
+      matrix:
+        container:
+          - duckdb-action-service
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Docker Hub token
+        run: echo ${{ secrets.DOCKER_SECRET }} > docker-token.txt
+
+      - name: Authenticate with Docker hub
+        run: make docker-hub-login
+
+      - name: Get version
+        id: version
+        run: echo VERSION=$(git describe --exact-match --tags | sed 's/^v//') >> $GITHUB_OUTPUT
+
+      - name: Combine and push manifest
+        run: make combine-manifest-${{ matrix.container }} VERSION=${{ steps.version.outputs.VERSION }}

@@ -1,0 +1,10 @@
+FROM docker.io/trustgraph/trustgraph-base:3.0.1
+
+RUN pip install --no-cache-dir duckdb
+
+COPY service.py /action-service/service.py
+
+WORKDIR /action-service/
+
+CMD ["python", "service.py"]
+
